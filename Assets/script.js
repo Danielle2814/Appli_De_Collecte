@@ -4,13 +4,13 @@ const LAST_RESPONSE_KEY = 'mboaLastResponse';
 
 // Remplace les valeurs ci-dessous par la configuration de ton projet Firebase.
 const FIREBASE_CONFIG = {
-  apiKey: '<REMPLACE_PAR_TA_CLE_API>',
-  authDomain: '<TON_PROJET>.firebaseapp.com',
-  databaseURL: 'https://<TON_PROJET>.firebaseio.com',
-  projectId: '<TON_PROJET>',
-  storageBucket: '<TON_PROJET>.appspot.com',
-  messagingSenderId: '<TON_SENDER_ID>',
-  appId: '<TON_APP_ID>'
+  apiKey: "AIzaSyAx217wNVARwtJStziEBLFQf3Z4n8o8eiY",
+  authDomain: "collecte-de-don.firebaseapp.com",
+  projectId: "collecte-de-don",
+  storageBucket: "collecte-de-don.firebasestorage.app",
+  messagingSenderId: "796255928115",
+  appId: "1:796255928115:web:40e02c6af0999ad1974846",
+  measurementId: "G-N0NZKTE05Q"
 };
 
 const firebaseEnabled =

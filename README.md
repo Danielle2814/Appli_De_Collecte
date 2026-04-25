@@ -17,18 +17,9 @@
   <li>Pour voir les résultats, clique sur <strong>Voir ce que les autres étudiants mangent</strong>.</li>
 </ol>
 
-<h2>Configuration Firebase</h2>
-<p>Pour activer le partage en temps réel, crée un projet Firebase et une <strong>Realtime Database</strong>. Puis remplace les valeurs dans <code>Assets/script.js</code> :</p>
-<pre><code>const FIREBASE_CONFIG = {
-  apiKey: '<REMPLACE_PAR_TA_CLE_API>',
-  authDomain: '<TON_PROJET>.firebaseapp.com',
-  databaseURL: 'https://<TON_PROJET>.firebaseio.com',
-  projectId: '<TON_PROJET>',
-  storageBucket: '<TON_PROJET>.appspot.com',
-  messagingSenderId: '<TON_SENDER_ID>',
-  appId: '<TON_APP_ID>'
-};
-</code></pre>
+<h2>Objet de l'application</h2>
+<p>Cette application permet de collecter des profils culinaires d'étudiants et de visualiser des tendances alimentaires sous forme de graphiques. Elle vise à aider les organisateurs et les créateurs d'offres alimentaires à mieux comprendre les habitudes de consommation et les besoins des étudiants.</p>
+
 
 <h2>Fonctionnalités</h2>
 <ul>
@@ -40,3 +31,9 @@
 
 <h2>Notes</h2>
 <p>Si Firebase n'est pas configuré, l'application fonctionne en mode local. Le formulaire ne peut être soumis qu'une seule fois par appareil.</p>
+
+<h2>Auteur</h2>
+<p>Développé dans le cadre d'un TP (INF232: STATISTIQUE ET ANALYSE DES DONNEES) à l'université de Yaoundé 1. Auteur : <strong>NGONO DANIELLE</strong>.</p>
+
+<h2>Licence</h2>
+<p>Ce projet est distribué sous la licence <strong>MIT</strong>. Tu peux l'utiliser, le modifier et le partager librement avec attribution.</p>
