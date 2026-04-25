@@ -185,7 +185,7 @@ function sortCounts(countMap) {
     .slice(0, 10);
 }
 
-function drawBarChart(canvas, labels, values, color) {
+function drawBarChart(canvas, labels, values, colors) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const width = canvas.clientWidth * devicePixelRatio;
@@ -199,7 +199,7 @@ function drawBarChart(canvas, labels, values, color) {
     const barHeight = (values[idx] / maxValue) * (height * 0.6);
     const x = idx * barWidth * 2 + barWidth * 0.5;
     const y = height - barHeight - 25 * devicePixelRatio;
-    ctx.fillStyle = color;
+    ctx.fillStyle = colors[idx % colors.length] || '#E67E22';
     ctx.fillRect(x, y, barWidth, barHeight);
     ctx.fillStyle = '#2C3E50';
     ctx.font = `${12 * devicePixelRatio}px Arial`;
@@ -254,11 +254,10 @@ function buildLegend(containerId, labels, values, colors) {
 
 function renderDashboard(sharedResponses = null) {
   const stored = getStoredResponses();
+  const allResponses = [...sampleResponses, ...stored];
   const responses = sharedResponses
-    ? [...sampleResponses, ...sharedResponses]
-    : stored.length > 0
-      ? [...sampleResponses, ...stored]
-      : sampleResponses;
+    ? Array.from(new Map([...allResponses, ...sharedResponses].map((item) => [item.id, item])).values())
+    : Array.from(new Map(allResponses.map((item) => [item.id, item])).values());
 
   const total = responses.length;
   const budgetSum = responses.reduce((sum, entry) => sum + Number(entry.budget_max || '0'), 0);
@@ -270,9 +269,13 @@ function renderDashboard(sharedResponses = null) {
   const usingShared = sharedResponses !== null && sharedResponses.length > 0;
   const fromLocal = stored.length > 0 ? stored.length : 0;
   if (firebaseEnabled) {
-    document.getElementById('insight-box').textContent = usingShared
-      ? `Données partagées en temps réel. Le dashboard montre maintenant les réponses de tous les utilisateurs.`
-      : 'Connexion à la base partagée... Si elle est active, les réponses s’afficheront ici en direct.';
+    if (usingShared) {
+      document.getElementById('insight-box').textContent = `Données partagées en temps réel. ${sharedResponses.length} réponses partagées + ${fromLocal} réponses locales sont affichées.`;
+    } else if (fromLocal) {
+      document.getElementById('insight-box').textContent = `Connexion Firebase en cours. ${fromLocal} réponses locales affichées en attendant la base partagée.`;
+    } else {
+      document.getElementById('insight-box').textContent = 'Connexion à la base partagée... Si elle est active, les réponses s’afficheront ici en direct.';
+    }
   } else {
     document.getElementById('insight-box').textContent = fromLocal
       ? `Données locales : ${fromLocal} réponses enregistrées sur ton téléphone. Elles sont incluses dans le dashboard.`
@@ -310,7 +313,7 @@ function renderDashboard(sharedResponses = null) {
     if (pieCharts.includes(canvasId)) {
       drawPieChart(canvas, labels, values, colors);
     } else if (labels.length > 0) {
-      drawBarChart(canvas, labels, values, colors[0]);
+      drawBarChart(canvas, labels, values, colors);
     }
   };
 
