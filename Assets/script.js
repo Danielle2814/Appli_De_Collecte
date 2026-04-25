@@ -2,6 +2,63 @@
 const STORAGE_KEY = 'mboaResponses';
 const LAST_RESPONSE_KEY = 'mboaLastResponse';
 
+// Remplace les valeurs ci-dessous par la configuration de ton projet Firebase.
+const FIREBASE_CONFIG = {
+  apiKey: '<REMPLACE_PAR_TA_CLE_API>',
+  authDomain: '<TON_PROJET>.firebaseapp.com',
+  databaseURL: 'https://<TON_PROJET>.firebaseio.com',
+  projectId: '<TON_PROJET>',
+  storageBucket: '<TON_PROJET>.appspot.com',
+  messagingSenderId: '<TON_SENDER_ID>',
+  appId: '<TON_APP_ID>'
+};
+
+const firebaseEnabled =
+  FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.includes('<') &&
+  FIREBASE_CONFIG.databaseURL && !FIREBASE_CONFIG.databaseURL.includes('<') &&
+  FIREBASE_CONFIG.projectId && !FIREBASE_CONFIG.projectId.includes('<');
+let firebaseDb = null;
+
+function initFirebase() {
+  if (!firebaseEnabled || typeof firebase === 'undefined') {
+    console.warn('Firebase non configuré ou non disponible. Le partage en temps réel est désactivé.');
+    return;
+  }
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    firebaseDb = firebase.database();
+  } catch (err) {
+    console.warn('Erreur initialisation Firebase:', err);
+    firebaseDb = null;
+  }
+}
+
+function pushSharedResponse(response) {
+  if (!firebaseDb) {
+    return Promise.reject(new Error('Firebase non initialisé'));
+  }
+  const ref = firebaseDb.ref('responses');
+  return ref.push(response);
+}
+
+function subscribeSharedResponses(listener, errorCallback) {
+  if (!firebaseDb) {
+    errorCallback?.(new Error('Firebase non initialisé'));
+    return;
+  }
+  const ref = firebaseDb.ref('responses');
+  ref.on('value', (snapshot) => {
+    const shared = [];
+    snapshot.forEach((child) => {
+      const item = child.val();
+      if (item) shared.push(item);
+    });
+    listener(shared);
+  }, (error) => {
+    errorCallback?.(error);
+  });
+}
+
 const sampleResponses = [
   {
     id: 'demo-1',
@@ -195,9 +252,13 @@ function buildLegend(containerId, labels, values, colors) {
   });
 }
 
-function renderDashboard() {
+function renderDashboard(sharedResponses = null) {
   const stored = getStoredResponses();
-  const responses = stored.length > 0 ? [...sampleResponses, ...stored] : sampleResponses;
+  const responses = sharedResponses
+    ? [...sampleResponses, ...sharedResponses]
+    : stored.length > 0
+      ? [...sampleResponses, ...stored]
+      : sampleResponses;
 
   const total = responses.length;
   const budgetSum = responses.reduce((sum, entry) => sum + Number(entry.budget_max || '0'), 0);
@@ -206,10 +267,17 @@ function renderDashboard() {
   document.getElementById('total-reponses').textContent = total;
   document.getElementById('budget-moyen').textContent = `${budgetMoyen} FCFA`;
 
+  const usingShared = sharedResponses !== null && sharedResponses.length > 0;
   const fromLocal = stored.length > 0 ? stored.length : 0;
-  document.getElementById('insight-box').textContent = fromLocal
-    ? `Données locales : ${fromLocal} réponses enregistrées sur ton téléphone. Elles s'affichent aussi sur le dashboard sans backend.`
-    : 'Aucune réponse enregistrée localement. Envoie un profil depuis le questionnaire pour voir tes données ici.';
+  if (firebaseEnabled) {
+    document.getElementById('insight-box').textContent = usingShared
+      ? `Données partagées en temps réel. Le dashboard montre maintenant les réponses de tous les utilisateurs.`
+      : 'Connexion à la base partagée... Si elle est active, les réponses s’afficheront ici en direct.';
+  } else {
+    document.getElementById('insight-box').textContent = fromLocal
+      ? `Données locales : ${fromLocal} réponses enregistrées sur ton téléphone. Elles sont incluses dans le dashboard.`
+      : 'Aucune réponse locale détectée. Envoie un profil depuis le questionnaire pour voir tes données ici.';
+  }
 
   const countBy = (key, extractor) => {
     return responses.reduce((acc, entry) => {
@@ -313,11 +381,69 @@ function setupExportImport() {
   }
 }
 
+function disableIndexForm(message) {
+  const form = document.getElementById('sondage-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const messageEl = document.getElementById('form-message');
+
+  if (form) {
+    Array.from(form.elements).forEach((field) => {
+      if (field.tagName !== 'A' && field.type !== 'hidden') {
+        field.disabled = true;
+      }
+    });
+  }
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Questionnaire déjà envoyé';
+  }
+  if (messageEl) {
+    messageEl.textContent = message;
+    messageEl.style.color = '#E74C3C';
+  }
+}
+
+function downloadJsonFile(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function initIndexPage() {
   const budgetButtons = Array.from(document.querySelectorAll('.btn-choice'));
   const budgetInput = document.getElementById('budget-input');
   const form = document.getElementById('sondage-form');
   const messageEl = document.getElementById('form-message');
+  const exportLocalBtn = document.getElementById('export-local-data-btn');
+  const shareHint = document.getElementById('share-hint');
+
+  if (firebaseEnabled) {
+    initFirebase();
+  }
+
+  const localResponses = getStoredResponses();
+  if (localResponses.length > 0) {
+    disableIndexForm('Tu as déjà rempli le questionnaire une fois. Le questionnaire ne peut être soumis qu’une seule fois par appareil.');
+    if (exportLocalBtn) {
+      exportLocalBtn.disabled = false;
+      exportLocalBtn.addEventListener('click', () => {
+        downloadJsonFile('mboa_reponses_partagees.json', localResponses);
+        if (shareHint) shareHint.textContent = 'Fichier exporté. Partage-le pour que d’autres utilisateurs puissent l’importer dans leur dashboard.';
+      });
+    }
+    return;
+  }
+
+  if (exportLocalBtn) {
+    exportLocalBtn.disabled = true;
+    if (shareHint) shareHint.textContent = 'Le bouton s’active après le premier envoi pour partager ton profil.';
+  }
 
   budgetButtons.forEach((button) => {
     button.addEventListener('click', () => {
@@ -353,14 +479,28 @@ function initIndexPage() {
       setStoredResponses(responses);
       setLastResponse(values);
 
-      if (messageEl) {
-        messageEl.textContent = 'Merci ! Ton profil culinaire est sauvegardé localement. Consulte le dashboard pour visualiser les graphiques.';
-        messageEl.style.color = '#2ECC71';
-      }
-      form.reset();
-      budgetButtons.forEach((btn) => btn.classList.remove('active'));
-      budgetButtons.find((btn) => btn.dataset.budget === '1000')?.classList.add('active');
-      if (budgetInput) budgetInput.value = '1000';
+      const firebasePromise = firebaseDb ? pushSharedResponse(values) : Promise.reject(new Error('Firebase non disponible'));
+
+      firebasePromise.then(() => {
+        if (messageEl) {
+          messageEl.textContent = 'Merci ! Ton profil culinaire est sauvegardé localement et partagé en direct pour tous.';
+          messageEl.style.color = '#2ECC71';
+        }
+      }).catch(() => {
+        if (messageEl) {
+          messageEl.textContent = 'Ton profil est sauvegardé localement. Le partage en direct n’est pas disponible.';
+          messageEl.style.color = '#E67E22';
+        }
+      }).finally(() => {
+        disableIndexForm('Ton questionnaire a bien été enregistré. Tu ne peux le soumettre qu’une seule fois.');
+        if (exportLocalBtn) {
+          exportLocalBtn.disabled = false;
+          exportLocalBtn.addEventListener('click', () => {
+            downloadJsonFile('mboa_reponses_partagees.json', getStoredResponses());
+            if (shareHint) shareHint.textContent = 'Fichier exporté. Partage-le pour que d’autres utilisateurs puissent l’importer dans leur dashboard.';
+          });
+        }
+      });
     });
   }
 }
@@ -370,7 +510,19 @@ function runApp() {
     initIndexPage();
   }
   if (pageIsDashboard()) {
-    renderDashboard();
+    if (firebaseEnabled) {
+      initFirebase();
+      subscribeSharedResponses(
+        (shared) => {
+          renderDashboard(shared);
+        },
+        () => {
+          renderDashboard();
+        }
+      );
+    } else {
+      renderDashboard();
+    }
     setupExportImport();
   }
 }
