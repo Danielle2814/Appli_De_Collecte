@@ -10,7 +10,8 @@ const FIREBASE_CONFIG = {
   storageBucket: "collecte-de-don.firebasestorage.app",
   messagingSenderId: "796255928115",
   appId: "1:796255928115:web:40e02c6af0999ad1974846",
-  measurementId: "G-N0NZKTE05Q"
+  measurementId: "G-N0NZKTE05Q",
+  databaseURL:"https://collecte-de-don-default-rtdb.firebaseio.com/"
 };
 
 const firebaseEnabled =
@@ -20,41 +21,70 @@ const firebaseEnabled =
 let firebaseDb = null;
 
 function initFirebase() {
-  if (!firebaseEnabled || typeof firebase === 'undefined') {
-    console.warn('Firebase non configuré ou non disponible. Le partage en temps réel est désactivé.');
+  if (!firebaseEnabled) {
+    console.warn('Firebase config non valide (firebaseEnabled=false)');
     return;
   }
+  
+  if (typeof firebase === 'undefined') {
+    console.error('❌ Firebase JS SDK non chargé ! Vérifiez que les scripts <script> sont dans le HTML.');
+    return;
+  }
+  
   try {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    firebaseDb = firebase.database();
+    // Vérifier si Firebase est déjà initialisé
+    if (firebase.apps && firebase.apps.length > 0) {
+      console.log('Firebase déjà initialisé');
+      firebaseDb = firebase.database();
+    } else {
+      console.log('Initialisation de Firebase...');
+      firebase.initializeApp(FIREBASE_CONFIG);
+      firebaseDb = firebase.database();
+      console.log('✅ Firebase initialisé avec succès');
+    }
   } catch (err) {
-    console.warn('Erreur initialisation Firebase:', err);
+    console.error('❌ Erreur initialisation Firebase:', err.message, err);
     firebaseDb = null;
   }
 }
 
 function pushSharedResponse(response) {
   if (!firebaseDb) {
+    console.warn('❌ pushSharedResponse: firebaseDb est null. Firebase n\'est pas prêt.');
     return Promise.reject(new Error('Firebase non initialisé'));
   }
+  
+  console.log('📤 Envoi données vers Firebase...', response);
   const ref = firebaseDb.ref('responses');
-  return ref.push(response);
+  return ref.push(response).then((result) => {
+    console.log('✅ Données envoyées avec succès à Firebase. ID:', result.key);
+    return result;
+  }).catch((error) => {
+    console.error('❌ Erreur lors de l\'envoi à Firebase:', error.message, error);
+    throw error;
+  });
 }
 
 function subscribeSharedResponses(listener, errorCallback) {
   if (!firebaseDb) {
+    console.warn('❌ subscribeSharedResponses: firebaseDb est null');
     errorCallback?.(new Error('Firebase non initialisé'));
     return;
   }
+  
+  console.log('📡 Souscription aux réponses partagées depuis Firebase...');
   const ref = firebaseDb.ref('responses');
+  
   ref.on('value', (snapshot) => {
     const shared = [];
     snapshot.forEach((child) => {
       const item = child.val();
       if (item) shared.push(item);
     });
+    console.log(`✅ Reçu ${shared.length} réponses de Firebase`);
     listener(shared);
   }, (error) => {
+    console.error('❌ Erreur lors de la réception des données Firebase:', error.message, error);
     errorCallback?.(error);
   });
 }
@@ -157,15 +187,30 @@ function setLastResponse(response) {
 }
 
 function getPageId() {
-  return window.location.pathname.split('/').pop();
+  const path = window.location.pathname.toLowerCase();
+  const filename = path.split('/').pop() || 'index.html';
+  return filename;
 }
 
 function pageIsIndex() {
-  return getPageId().toLowerCase().includes('index');
+  const pageId = getPageId();
+  // Accepte: index, index.html, ou "" si racine du site
+  const isIndexPage = 
+    pageId === 'index.html' || 
+    pageId === 'index' || 
+    pageId === '' ||
+    pageId.endsWith('index.html') ||
+    window.location.pathname.endsWith('/public/') ||
+    window.location.pathname.endsWith('/public');
+  console.log('pageIsIndex check:', { pageId, path: window.location.pathname, result: isIndexPage });
+  return isIndexPage;
 }
 
 function pageIsDashboard() {
-  return getPageId().toLowerCase().includes('dashboard');
+  const pageId = getPageId();
+  const isDashboard = pageId.includes('dashboard') || window.location.pathname.includes('dashboard');
+  console.log('pageIsDashboard check:', { pageId, path: window.location.pathname, result: isDashboard });
+  return isDashboard;
 }
 
 function formatLabel(value) {
@@ -274,7 +319,7 @@ function renderDashboard(sharedResponses = null) {
     } else if (fromLocal) {
       document.getElementById('insight-box').textContent = `Connexion Firebase en cours. ${fromLocal} réponses locales affichées en attendant la base partagée.`;
     } else {
-      document.getElementById('insight-box').textContent = 'Connexion à la base partagée... Si elle est active, les réponses s’afficheront ici en direct.';
+      document.getElementById('insight-box').textContent = `Connexion à la base partagée... Si elle est active, les réponses s'afficheront ici en direct.`;
     }
   } else {
     document.getElementById('insight-box').textContent = fromLocal
@@ -377,7 +422,7 @@ function setupExportImport() {
         if (status) status.textContent = 'Données importées avec succès. Le dashboard est mis à jour.';
         renderDashboard();
       } catch (err) {
-        if (status) status.textContent = 'Impossible d’importer le fichier. Vérifie qu’il s’agit d’un export JSON valide.';
+        if (status) status.textContent = `Impossible d'importer le fichier. Vérifie qu'il s'agit d'un export JSON valide.`;
       }
       event.target.value = '';
     });
@@ -430,14 +475,30 @@ function initIndexPage() {
     initFirebase();
   }
 
+  // Ajouter les event listeners aux boutons de budget AVANT toute vérification
+  if (budgetButtons.length > 0) {
+    console.log(` ${budgetButtons.length} boutons budget trouvés`);
+    budgetButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        console.log(' Clic bouton budget:', button.dataset.budget);
+        budgetButtons.forEach((btn) => btn.classList.remove('active'));
+        button.classList.add('active');
+        if (budgetInput) budgetInput.value = button.dataset.budget || '1000';
+      });
+    });
+  } else {
+    console.warn(' Aucun bouton budget trouvé!');
+  }
+
   const localResponses = getStoredResponses();
   if (localResponses.length > 0) {
-    disableIndexForm('Tu as déjà rempli le questionnaire une fois. Le questionnaire ne peut être soumis qu’une seule fois par appareil.');
+    console.log(' Réponses locales détectées:', localResponses.length);
+    disableIndexForm(`Tu as déjà rempli le questionnaire une fois. Le questionnaire ne peut être soumis qu'une seule fois par appareil.`);
     if (exportLocalBtn) {
       exportLocalBtn.disabled = false;
       exportLocalBtn.addEventListener('click', () => {
         downloadJsonFile('mboa_reponses_partagees.json', localResponses);
-        if (shareHint) shareHint.textContent = 'Fichier exporté. Partage-le pour que d’autres utilisateurs puissent l’importer dans leur dashboard.';
+        if (shareHint) shareHint.textContent = `Fichier exporté. Partage-le pour que d'autres utilisateurs puissent l'importer dans leur dashboard.`;
       });
     }
     return;
@@ -445,20 +506,14 @@ function initIndexPage() {
 
   if (exportLocalBtn) {
     exportLocalBtn.disabled = true;
-    if (shareHint) shareHint.textContent = 'Le bouton s’active après le premier envoi pour partager ton profil.';
+    if (shareHint) shareHint.textContent = `Le bouton s'active après le premier envoi pour partager ton profil.`;
   }
-
-  budgetButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-      budgetButtons.forEach((btn) => btn.classList.remove('active'));
-      button.classList.add('active');
-      if (budgetInput) budgetInput.value = button.dataset.budget || '1000';
-    });
-  });
 
   if (form) {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
+      console.log(' Soumission du formulaire détectée...');
+      
       const values = {
         id: `resp-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -476,31 +531,38 @@ function initIndexPage() {
         odeur_select: document.getElementById('odeur-select')?.value || 'friture_poisson',
         genie_choix: document.getElementById('genie-choix')?.value || 'rapide'
       };
+      
+      console.log('📊 Données collectées:', values);
 
       const responses = getStoredResponses();
       responses.push(values);
       setStoredResponses(responses);
       setLastResponse(values);
+      console.log('💾 Données sauvegardées LOCALEMENT');
 
+      console.log('🔧 État Firebase:', { firebaseEnabled, firebaseDb: firebaseDb ? 'initialisé' : 'null' });
+      
       const firebasePromise = firebaseDb ? pushSharedResponse(values) : Promise.reject(new Error('Firebase non disponible'));
 
       firebasePromise.then(() => {
+        console.log('✅ Succès: Firebase a reçu les données');
         if (messageEl) {
           messageEl.textContent = 'Merci ! Ton profil culinaire est sauvegardé localement et partagé en direct pour tous.';
           messageEl.style.color = '#2ECC71';
         }
-      }).catch(() => {
+      }).catch((err) => {
+        console.warn('⚠️ Firebase non disponible, mais les données sont sauvegardées localement:', err.message);
         if (messageEl) {
-          messageEl.textContent = 'Ton profil est sauvegardé localement. Le partage en direct n’est pas disponible.';
+          messageEl.textContent = `Ton profil est sauvegardé localement. Le partage en direct n'est pas disponible.`;
           messageEl.style.color = '#E67E22';
         }
       }).finally(() => {
-        disableIndexForm('Ton questionnaire a bien été enregistré. Tu ne peux le soumettre qu’une seule fois.');
+        disableIndexForm(`Ton questionnaire a bien été enregistré. Tu ne peux le soumettre qu'une seule fois.`);
         if (exportLocalBtn) {
           exportLocalBtn.disabled = false;
           exportLocalBtn.addEventListener('click', () => {
             downloadJsonFile('mboa_reponses_partagees.json', getStoredResponses());
-            if (shareHint) shareHint.textContent = 'Fichier exporté. Partage-le pour que d’autres utilisateurs puissent l’importer dans leur dashboard.';
+            if (shareHint) shareHint.textContent = `Fichier exporté. Partage-le pour que d'autres utilisateurs puissent l'importer dans leur dashboard.`;
           });
         }
       });
@@ -509,10 +571,13 @@ function initIndexPage() {
 }
 
 function runApp() {
+  console.log('runApp() démarré');
   if (pageIsIndex()) {
+    console.log('Initialisation page INDEX');
     initIndexPage();
   }
   if (pageIsDashboard()) {
+    console.log('Initialisation page DASHBOARD');
     if (firebaseEnabled) {
       initFirebase();
       subscribeSharedResponses(
@@ -530,4 +595,13 @@ function runApp() {
   }
 }
 
-runApp();
+// S'assurer que le DOM est chargé avant d'exécuter
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 DOMContentLoaded détecté, démarrage de runApp()');
+    runApp();
+  });
+} else {
+  console.log('🚀 DOM déjà chargé, démarrage de runApp()');
+  runApp();
+}
